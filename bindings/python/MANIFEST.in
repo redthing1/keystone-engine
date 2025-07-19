@@ -1,7 +1,17 @@
 include README.md
 include LICENSE
+include LICENSE.TXT
+include setup.py
+include setup.cfg
+include _dummy.c
 recursive-include keystone *.py
 recursive-include keystone *.h
+# Include pre-built libraries if they exist
+include keystone/*.so
+include keystone/*.so.*
+include keystone/*.dylib
+include keystone/*.dll
+include keystone/lib*
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .DS_Store
