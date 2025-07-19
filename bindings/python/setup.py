@@ -15,8 +15,6 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.bdist_wheel import bdist_wheel
 from distutils.errors import DistutilsSetupError
 
-VERSION = '0.9.3'
-
 # Paths
 ROOT_DIR = Path(__file__).parent.absolute()
 PROJECT_ROOT = ROOT_DIR.parent.parent
@@ -196,35 +194,8 @@ dummy_c = ROOT_DIR / '_dummy.c'
 if not dummy_c.exists():
     dummy_c.write_text('// Dummy C file for triggering build_ext\nvoid dummy(void) {}\n')
 
-# Read README for long description
-long_description = ''
-readme_file = ROOT_DIR / 'README.md'
-if readme_file.exists():
-    long_description = readme_file.read_text(encoding='utf-8')
-
+# Minimal setup() call - most config is in pyproject.toml
 setup(
-    name='keystone-engine',
-    version=VERSION,
-    author='Nguyen Anh Quynh',
-    author_email='aquynh@gmail.com',
-    description='Keystone assembler engine',
-    long_description=long_description,
-    long_description_content_type='text/markdown',
-    url='https://www.keystone-engine.org',
-    license='GPL-2.0',
-    
-    packages=['keystone'],
-    package_data={
-        'keystone': [
-            '*.py',
-            '*.so', '*.so.*',  # Linux
-            '*.dylib',         # macOS  
-            '*.dll',           # Windows
-            'lib*',            # versioned libraries
-        ],
-    },
-    include_package_data=True,
-    
     # Dummy extension to trigger build_ext
     ext_modules=[Extension('_keystone_dummy', sources=['_dummy.c'])],
     
@@ -232,28 +203,4 @@ setup(
         'build_ext': CustomBuildExt,
         'bdist_wheel': CustomBdistWheel,
     },
-    
-    python_requires='>=3.6',
-    
-    classifiers=[
-        'Development Status :: 5 - Production/Stable',
-        'Intended Audience :: Developers',
-        'Topic :: Software Development :: Assemblers',
-        'Topic :: Security',
-        'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
-        'Programming Language :: Python :: 3.10',
-        'Programming Language :: Python :: 3.11',
-        'Programming Language :: Python :: 3.12',
-        'Programming Language :: Python :: 3.13',
-        'Operating System :: POSIX :: Linux',
-        'Operating System :: MacOS :: MacOS X',
-        'Operating System :: Microsoft :: Windows',
-    ],
-    
-    zip_safe=False,
 )
