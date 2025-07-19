@@ -43,6 +43,18 @@ See [COMPILE.md](docs/COMPILE.md) file for how to compile and install Keystone.
 More documentation is available in [docs/README.md](docs/README.md).
 
 
+Python Installation
+-------------------
+
+This fork includes improved Python bindings that build from source during installation:
+
+```bash
+pip install git+https://github.com/keystone-engine/keystone.git#subdirectory=bindings/python
+```
+
+No pre-built libraries or system installation required. Works on macOS, Linux, and Windows.
+
+
 Contact
 -------
 

@@ -9,69 +9,149 @@ from .keystone_const import *
 
 from ctypes import *
 from platform import system
-from os.path import split, join, dirname, exists
+from os.path import split, join, dirname, exists, abspath
 import sys
+import os
 
 
 import inspect
 if not hasattr(sys.modules[__name__], '__file__'):
     __file__ = inspect.getfile(inspect.currentframe())
 
-_lib_path = split(__file__)[0]
-_all_libs = ('keystone.dll', 'libkeystone.so', 'libkeystone.so.%u' %KS_API_MAJOR, 'libkeystone.dylib')
+# Get the directory where this module is located
+_lib_path = abspath(dirname(__file__))
+
+# Define library names for each platform
+_system = system()
+if _system == 'Darwin':
+    _lib_patterns = ['libkeystone.dylib', 'libkeystone.*.dylib']
+elif _system == 'Windows':
+    _lib_patterns = ['keystone.dll']
+else:  # Linux and others
+    _lib_patterns = ['libkeystone.so', 'libkeystone.so.*']
+
+# Try to load the library
+_ks = None
 _found = False
 
-for _lib in _all_libs:
-    try:
-        _lib_file = join(_lib_path, _lib)
-        #print(">> 0: Trying to load %s" %_lib_file);
-        _ks = cdll.LoadLibrary(_lib_file)
-        _found = True
+# First, try to load from the module directory (for pip installed packages)
+for pattern in _lib_patterns:
+    # Direct file name
+    lib_file = join(_lib_path, pattern)
+    if exists(lib_file):
+        try:
+            _ks = cdll.LoadLibrary(lib_file)
+            _found = True
+            break
+        except OSError:
+            pass
+    
+    # Also try with glob pattern matching for versioned libraries
+    import glob
+    for lib_file in glob.glob(join(_lib_path, pattern)):
+        try:
+            _ks = cdll.LoadLibrary(lib_file)
+            _found = True
+            break
+        except OSError:
+            pass
+    
+    if _found:
         break
-    except OSError:
+
+# If not found in module directory, try system paths
+if not _found:
+    # Standard library names without path
+    _standard_libs = []
+    if _system == 'Darwin':
+        _standard_libs = ['libkeystone.dylib']
+    elif _system == 'Windows':
+        _standard_libs = ['keystone.dll']
+    else:
+        _standard_libs = ['libkeystone.so', 'libkeystone.so.%u' % KS_API_MAJOR]
+    
+    for lib_name in _standard_libs:
+        try:
+            _ks = cdll.LoadLibrary(lib_name)
+            _found = True
+            break
+        except OSError:
+            pass
+
+# Try common system locations
+if not _found:
+    _search_paths = []
+    
+    if _system == 'Windows':
+        # Windows common paths
+        _search_paths.extend([
+            os.environ.get('PROGRAMFILES', 'C:\\Program Files'),
+            os.environ.get('PROGRAMFILES(X86)', 'C:\\Program Files (x86)'),
+            'C:\\Windows\\System32',
+            'C:\\Windows\\SysWOW64',
+        ])
+    else:
+        # Unix-like systems
+        _search_paths.extend([
+            '/usr/local/lib',
+            '/usr/lib',
+            '/opt/local/lib',
+            '/opt/homebrew/lib',  # Homebrew on Apple Silicon
+            '/usr/lib/x86_64-linux-gnu',  # Debian/Ubuntu 64-bit
+            '/usr/lib/i386-linux-gnu',     # Debian/Ubuntu 32-bit
+            '/usr/lib64',                   # RedHat/CentOS 64-bit
+        ])
+    
+    # Add LD_LIBRARY_PATH entries
+    if 'LD_LIBRARY_PATH' in os.environ:
+        _search_paths.extend(os.environ['LD_LIBRARY_PATH'].split(':'))
+    
+    # Add DYLD_LIBRARY_PATH entries (macOS)
+    if 'DYLD_LIBRARY_PATH' in os.environ:
+        _search_paths.extend(os.environ['DYLD_LIBRARY_PATH'].split(':'))
+    
+    for path in _search_paths:
+        if not exists(path):
+            continue
+            
+        for lib_name in _standard_libs:
+            lib_file = join(path, lib_name)
+            if exists(lib_file):
+                try:
+                    _ks = cdll.LoadLibrary(lib_file)
+                    _found = True
+                    break
+                except OSError:
+                    pass
+        
+        if _found:
+            break
+
+# Final attempt: check Python's lib directory
+if not _found:
+    try:
+        import distutils.sysconfig
+        _python_lib = distutils.sysconfig.get_python_lib()
+        for lib_name in _standard_libs:
+            lib_file = join(_python_lib, 'keystone', lib_name)
+            if exists(lib_file):
+                try:
+                    _ks = cdll.LoadLibrary(lib_file)
+                    _found = True
+                    break
+                except OSError:
+                    pass
+    except ImportError:
+        # distutils might not be available in some environments
         pass
 
-if _found == False:
-    # try loading from default paths
-    for _lib in _all_libs:
-        try:
-            #print(">> 1: Trying to load %s" %_lib);
-            _ks = cdll.LoadLibrary(_lib)
-            _found = True
-            break
-        except OSError:
-            pass
-
-if _found == False:
-    # last try: loading from python lib directory
-    import distutils.sysconfig
-    _lib_path = distutils.sysconfig.get_python_lib()
-    for _lib in _all_libs:
-        try:
-            _lib_file = join(_lib_path, 'keystone', _lib)
-            #print(">> 2: Trying to load %s" %_lib_file);
-            _ks = cdll.LoadLibrary(_lib_file)
-            _found = True
-            break
-        except OSError:
-            pass
-
-# Attempt Linux/Darwin specific load (10.11 specific),
-# since LD_LIBRARY_PATH is not guaranteed to exist
-if (_found == False) and (system() != 'Windows'):
-    _lib_path = '/usr/local/lib/'
-    for _lib in _all_libs:
-        try:
-            _lib_file = join(_lib_path, _lib)
-            #print(">> 3: Trying to load %s" %_lib_file);
-            _ks = cdll.LoadLibrary(_lib_file)
-            _found = True
-            break
-        except OSError:
-            pass
-
-if _found == False:
-    raise ImportError("ERROR: fail to load the dynamic library.")
+if not _found:
+    raise ImportError(
+        "ERROR: fail to load the Keystone dynamic library. "
+        "Please ensure Keystone is installed properly. "
+        "Searched locations: module directory, system paths, "
+        "LD_LIBRARY_PATH/DYLD_LIBRARY_PATH, and common system directories."
+    )
 
 __version__ = "%u.%u.%u" %(KS_VERSION_MAJOR, KS_VERSION_MINOR, KS_VERSION_EXTRA)
 
@@ -98,39 +178,34 @@ _setup_prototype(_ks, "ks_free", None, POINTER(c_ubyte))
 KS_SYM_RESOLVER = CFUNCTYPE(c_bool, c_char_p, POINTER(c_uint64))
 
 # access to error code via @errno of KsError
-# this also includes the @stat_count returned by ks_asm
 class KsError(Exception):
-    def __init__(self, errno, count=None):
-        self.stat_count = count
+    def __init__(self, errno):
         self.errno = errno
         self.message = _ks.ks_strerror(self.errno)
         if not isinstance(self.message, str) and isinstance(self.message, bytes):
             self.message = self.message.decode('utf-8')
+        super(KsError, self).__init__(self.message)
 
-    # retrieve @stat_count value returned by ks_asm()
-    def get_asm_count(self):
-        return self.stat_count
-
-    def __str__(self):
-        return self.message
-
-
-# return the core's version
+# return version binding
 def ks_version():
     major = c_int()
     minor = c_int()
     combined = _ks.ks_version(byref(major), byref(minor))
     return (major.value, minor.value, combined)
 
-
 # return the binding's version
 def version_bind():
     return (KS_API_MAJOR, KS_API_MINOR, (KS_API_MAJOR << 8) + KS_API_MINOR)
 
-
 # check to see if this engine supports a particular arch
 def ks_arch_supported(query):
     return _ks.ks_arch_supported(query)
+
+# print out debugging info
+def debug():
+    # is Keystone compiled in debug mode?
+    if KS_MODE_LITTLE_ENDIAN & (1 << 31):
+        print("Keystone was compiled in debug mode.")
 
 
 class Ks(object):
@@ -148,15 +223,9 @@ class Ks(object):
         if status != KS_ERR_OK:
             self._ksh = None
             raise KsError(status)
+        # internal variables
+        self._syntax = None
 
-        if arch == KS_ARCH_X86:
-            # Intel syntax is default for X86
-            self._syntax = KS_OPT_SYNTAX_INTEL
-        else:
-            self._syntax = None
-
-
-    # destructor to be called automatically when object is destroyed.
     def __del__(self):
         if self._ksh:
             try:
@@ -167,14 +236,22 @@ class Ks(object):
             except: # _ks might be pulled from under our feet
                 pass
 
+    # return the mode of this engine
+    @property
+    def mode(self):
+        return self._mode
 
-    # return assembly syntax.
+    # return the architecture of this engine
+    @property
+    def arch(self):
+        return self._arch
+
+    # return the syntax of this engine
     @property
     def syntax(self):
         return self._syntax
 
-
-    # syntax setter: modify assembly syntax.
+    # syntax setter: modify syntax of this engine
     @syntax.setter
     def syntax(self, style):
         status = _ks.ks_option(self._ksh, KS_OPT_SYNTAX, style)
@@ -183,34 +260,33 @@ class Ks(object):
         # save syntax
         self._syntax = style
 
-
     @property
     def sym_resolver(self):
         return
 
-
     @sym_resolver.setter
     def sym_resolver(self, resolver):
         callback = KS_SYM_RESOLVER(resolver)
-        status = _ks.ks_option(self._ksh, KS_OPT_SYM_RESOLVER, callback)
+        status = _ks.ks_option(self._ksh, KS_OPT_SYM_RESOLVER, cast(callback, c_void_p))
         if status != KS_ERR_OK:
             raise KsError(status)
+
         # save resolver
         self._sym_resolver = callback
 
-
-    # assemble a string of assembly
     def asm(self, string, addr=0, as_bytes=False):
         encode = POINTER(c_ubyte)()
         encode_size = c_size_t()
         stat_count = c_size_t()
-        if not isinstance(string, bytes) and isinstance(string, str):
-            string = string.encode('ascii')
-
-        status = _ks.ks_asm(self._ksh, string, addr, byref(encode), byref(encode_size), byref(stat_count))
-        if (status != 0):
-            errno = _ks.ks_errno(self._ksh)
-            raise KsError(errno, stat_count.value)
+        # encode to bytes by default
+        if isinstance(string, str):
+            string_bytes = string.encode('utf-8')
+        else:
+            string_bytes = string
+        
+        status = _ks.ks_asm(self._ksh, string_bytes, addr, byref(encode), byref(encode_size), byref(stat_count))
+        if status != 0:
+            raise KsError(status)
         else:
             if stat_count.value == 0:
                 return (None, 0)
@@ -221,25 +297,26 @@ class Ks(object):
                     encoding = []
                     for i in range(encode_size.value):
                         encoding.append(encode[i])
-
                 _ks.ks_free(encode)
                 return (encoding, stat_count.value)
 
 
 # print out debugging info
 def debug():
-    archs = { "arm": KS_ARCH_ARM, "arm64": KS_ARCH_ARM64, \
-        "mips": KS_ARCH_MIPS, "sparc": KS_ARCH_SPARC, \
-        "systemz": KS_ARCH_SYSTEMZ, "ppc": KS_ARCH_PPC, \
-        "hexagon": KS_ARCH_HEXAGON, "x86": KS_ARCH_X86, 'evm': KS_ARCH_EVM }
+    # is Keystone compiled in debug mode?
+    if KS_MODE_LITTLE_ENDIAN & (1 << 31):
+        print("Keystone was compiled in debug mode.")
 
-    all_archs = ""
-    keys = archs.keys()
-    for k in sorted(keys):
-        if ks_arch_supported(archs[k]):
-            all_archs += "-%s" % k
 
-    (major, minor, _combined) = ks_version()
+# a dummy class to support cs_disasm_quick()
+class _dummy:
+    def __init__(self, data, size):
+        self.bytes = data
+        self.size = size
 
-    return "python-%s-c%u.%u-b%u.%u" % (all_archs, major, minor, KS_API_MAJOR, KS_API_MINOR)
 
+def asm(arch, mode, code, addr=0, as_bytes=False):
+    # initialize encoder
+    ks = Ks(arch, mode)
+
+    return ks.asm(code, addr, as_bytes)
