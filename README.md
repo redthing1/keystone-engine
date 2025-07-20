@@ -49,7 +49,7 @@ Python Installation
 This fork includes improved Python bindings that build from source during installation:
 
 ```bash
-pip install git+https://github.com/keystone-engine/keystone.git#subdirectory=bindings/python
+pip install git+https://github.com/redthing1/keystone-engine.git#subdirectory=bindings/python
 ```
 
 No pre-built libraries or system installation required. Works on macOS, Linux, and Windows.
