@@ -20,6 +20,7 @@
 #include "llvm/Support/Compiler.h"
 #include <algorithm> // for std::all_of
 #include <cassert>
+#include <cstdint> // for intptr_t
 #include <cstddef> // for std::size_t
 #include <cstdlib> // for qsort
 #include <functional>
